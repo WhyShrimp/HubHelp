@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🛡️ SafeWeb Pro</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">🛡️</div>
+                <div class="logo-content">
+                    <h1>SafeWeb Pro</h1>
+                    <div class="logo-subtitle">Защита от фишинга</div>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="header-btn" id="themeToggle">🌙</button>
+                <button class="header-btn" id="refreshBtn">🔄</button>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" data-tab="home">
+                <span class="tab-icon">🏠</span>
+                <span>Главная</span>
+            </button>
+            <button class="tab" data-tab="database">
+                <span class="tab-icon">📋</span>
+                <span>База</span>
+            </button>
+            <button class="tab" data-tab="tools">
+                <span class="tab-icon">🔧</span>
+                <span>Инструменты</span>
+            </button>
+        </div>
+
+        <div class="tab-content active" id="homeTab">
+            <!-- Поиск -->
+            <div class="search-container">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="siteSearch" class="search-input" 
+                       placeholder="Поиск по сайтам или проверка домена...">
+            </div>
+
+            <!-- Результаты -->
+            <div class="results-container" id="resultsContainer">
+                <!-- Динамически заполняется -->
+            </div>
+        </div>
+
+        <div class="tab-content" id="databaseTab">
+            <div class="database-controls">
+                <button class="btn" id="sortByName">По названию</button>
+                <button class="btn" id="sortByCategory">По категории</button>
+                <button class="btn" id="exportBtn">Экспорт</button>
+            </div>
+            
+            <div class="quick-stats">
+                <div class="quick-stat">
+                    <div class="quick-stat-value" id="totalSites">0</div>
+                    <div class="quick-stat-label">Сайтов</div>
+                </div>
+                <div class="quick-stat">
+                    <div class="quick-stat-value" id="totalCategories">0</div>
+                    <div class="quick-stat-label">Категорий</div>
+                </div>
+                <div class="quick-stat">
+                    <div class="quick-stat-value" id="cacheSize">0</div>
+                    <div class="quick-stat-label">В кэше</div>
+                </div>
+            </div>
+
+            <div class="results-container" id="databaseResults">
+                <!-- Динамически заполняется -->
+            </div>
+        </div>
+
+        <div class="tab-content" id="toolsTab">
+            <div class="results-container">
+                <div class="category-section">
+                    <div class="category-header">Инструменты безопасности</div>
+                    
+                    <div class="tool-card" id="checkCurrentSite">
+                        <h4>🔍 Проверить текущий сайт</h4>
+                        <p>Проверьте безопасность открытой вкладки</p>
+                    </div>
+                    
+                    <div class="tool-card" id="clearCache">
+                        <h4>🗑️ Очистить кэш</h4>
+                        <p>Удалить все кэшированные проверки</p>
+                    </div>
+                    
+                    <div class="tool-card" id="exportDatabase">
+                        <h4>📤 Экспорт базы</h4>
+                        <p>Сохранить базу безопасных сайтов</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div class="version">SafeWeb Pro v2.0.1</div>
+            <div class="footer-info" id="statsInfo">Загружаем статистику...</div>
+        </div>
+    </div>
+
+    <!-- Модальные окна -->
+    <div class="modal" id="siteDetailsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="modalTitle">Детали сайта</span>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Динамически заполняется -->
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-secondary modal-close">Закрыть</button>
+                <button class="btn btn-primary" id="openSiteBtn">Открыть сайт</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
