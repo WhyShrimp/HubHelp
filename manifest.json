@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "🛡️ SafeWeb Pro - Безопасный браузинг",
-  "version": "2.0.0",
-  "description": "Интеллектуальная защита от фишинга и опасных сайтов",
+  "version": "2.0.2",
+  "description": "Защита при серфинге с базой проверенных сайтов",
   "permissions": [
     "tabs",
     "activeTab",
@@ -40,6 +40,17 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content-links.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://mail.google.com/*",
+        "*://mail.ru/*",
+        "*://e.mail.ru/*",
+        "*://account.mail.ru/*",
+        "*://*.mail.ru/*"
+      ],
+      "js": ["content-email-warning.js"],
       "run_at": "document_end"
     }
   ],

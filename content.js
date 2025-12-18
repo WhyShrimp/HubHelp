@@ -63,7 +63,7 @@ class GoogleSearchIndicator {
     const searchResults = document.querySelectorAll('div[data-sokoban-container]');
     if (searchResults.length === 0) {
       // Старая версия Google - ищем по другому селектору
-      const oldResults = document.querySelectorAll('g-card-container');
+      const oldResults = document.querySelectorAll('g-card-container, .g');
       oldResults.forEach(card => this.processResultCard(card));
     } else {
       searchResults.forEach(container => {
@@ -93,15 +93,8 @@ class GoogleSearchIndicator {
       // Проверяем статус безопасности
       const status = this.checkDomainSafety(domain);
 
-      // Ищем элемент с названием сайта
-      const titleElement = cardElement.querySelector('h3, [role="heading"]');
-      if (titleElement) {
-        // Добавляем индикатор рядом с названием
-        this.addIndicator(titleElement, status);
-
-        // Также добавляем на саму ссылку для наглядности
-        this.highlightLink(linkElement, status);
-      }
+      // Добавляем цветную полоску
+      this.addColorStrip(cardElement, status);
     } catch (error) {
       console.error('Error processing card:', error);
     }
@@ -129,11 +122,11 @@ class GoogleSearchIndicator {
       return this.checkedDomains.get(domain);
     }
 
-    let status = 'unknown'; // неизвестно (жёлтый)
+    let status = 'unknown'; // желтая полоска
 
     // Прямое совпадение
     if (this.sitesData[domain]) {
-      status = 'safe'; // зелёный
+      status = 'safe'; // зеленая полоска
     } else {
       // Проверяем поддомены
       const parts = domain.split('.');
@@ -148,121 +141,84 @@ class GoogleSearchIndicator {
       }
     }
 
-    // Проверяем подозрительные паттерны
-    if (this.looksLikeBait(domain)) {
-      status = 'danger'; // красный
-    }
-
     this.checkedDomains.set(domain, status);
     return status;
   }
 
   /**
-  * Проверить подозрительные паттерны
+  * Добавить цветную полоску
   */
-  looksLikeBait(domain) {
-    const suspiciousPatterns = [
-      /phishing/i,
-      /scam/i,
-      /fake/i,
-      /verify/i,
-      /confirm/i,
-      /security-check/i,
-      /update-required/i,
-      /account-verification/i,
-    ];
-    return suspiciousPatterns.some(pattern => pattern.test(domain));
-  }
-
-  /**
-  * Добавить визуальный индикатор
-  */
-  addIndicator(titleElement, status) {
+  addColorStrip(cardElement, status) {
     // Проверяем, чтобы не добавить дубликат
-    if (titleElement.querySelector('.safeweb-indicator')) {
+    if (cardElement.dataset.safewebProcessed === 'true') {
       return;
     }
 
-    // Определяем цвет и текст
-    let color, text, title;
+    // Определяем цвет полоски
+    let color, title;
     switch(status) {
       case 'safe':
         color = '#10b981'; // зелёный
-        text = '●';
         title = '✓ Безопасный сайт';
-        break;
-      case 'danger':
-        color = '#ef4444'; // красный
-        text = '●';
-        title = '⚠️ Подозрительный сайт';
         break;
       case 'unknown':
       default:
         color = '#f59e0b'; // жёлтый
-        text = '●';
         title = '? Неизвестный сайт';
     }
 
-    // Создаём индикатор
-    const indicator = document.createElement('span');
-    indicator.className = 'safeweb-indicator';
-    indicator.textContent = text;
-    indicator.style.cssText = `
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      background-color: ${color};
-      border-radius: 50%;
-      margin-left: 8px;
-      margin-right: 4px;
-      cursor: pointer;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-      box-shadow: 0 0 8px ${color}80;
-      vertical-align: middle;
-    `;
-    indicator.title = title;
-    indicator.setAttribute('data-safeweb-status', status);
+    // Добавляем цветную полоску слева
+    cardElement.style.borderLeft = `4px solid ${color}`;
+    cardElement.style.paddingLeft = '12px';
+    cardElement.style.marginLeft = '-12px';
+    cardElement.style.position = 'relative';
+    cardElement.style.transition = 'all 0.2s ease';
+    cardElement.dataset.safewebProcessed = 'true';
+    cardElement.title = title;
 
-    // Добавляем эффект при наведении
-    indicator.addEventListener('mouseenter', (e) => {
-      e.target.style.transform = 'scale(1.5)';
-      e.target.style.boxShadow = `0 0 12px ${color}`;
-    });
-
-    indicator.addEventListener('mouseleave', (e) => {
-      e.target.style.transform = 'scale(1)';
-      e.target.style.boxShadow = `0 0 8px ${color}80`;
-    });
-
-    // Вставляем индикатор в начало заголовка
-    titleElement.insertBefore(indicator, titleElement.firstChild);
-  }
-
-  /**
-  * Подсветить саму ссылку
-  */
-  highlightLink(linkElement, status) {
-    let borderColor = '#f59e0b'; // жёлтый по умолчанию
-    switch(status) {
-      case 'safe':
-        borderColor = '#10b981';
-        break;
-      case 'danger':
-        borderColor = '#ef4444';
-        break;
+    // Добавляем индикатор для неизвестных сайтов
+    if (status === 'unknown') {
+      const warningIcon = document.createElement('div');
+      warningIcon.innerHTML = '❓';
+      warningIcon.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        font-size: 16px;
+        color: ${color};
+        cursor: help;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+      `;
+      warningIcon.title = 'Неизвестный сайт - не проверен в базе безопасности';
+      
+      cardElement.appendChild(warningIcon);
+      
+      // Добавляем обработчик клика для предупреждения
+      const link = cardElement.querySelector('a[href]');
+      if (link) {
+        link.addEventListener('click', (e) => {
+          if (confirm(`⚠️ Внимание!\n\nВы собираетесь перейти на сайт, который не проверен в нашей базе безопасности:\n${this.extractDomain(link.href)}\n\nПродолжить?`)) {
+            return true;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        });
+      }
     }
 
-    // Добавляем левую границу для визуального выделения
-    linkElement.style.borderLeft = `3px solid ${borderColor}`;
-    linkElement.style.paddingLeft = '8px';
-    linkElement.style.transition = 'all 0.2s ease';
-    linkElement.addEventListener('mouseenter', (e) => {
-      e.target.style.borderLeftWidth = '4px';
-      e.target.style.paddingLeft = '7px';
+    // Эффект при наведении
+    cardElement.addEventListener('mouseenter', () => {
+      cardElement.style.borderLeftWidth = '6px';
+      cardElement.style.paddingLeft = '10px';
+      cardElement.style.marginLeft = '-10px';
     });
-    linkElement.addEventListener('mouseleave', (e) => {
-      e.target.style.borderLeftWidth = '3px';
-      e.target.style.paddingLeft = '8px';
+
+    cardElement.addEventListener('mouseleave', () => {
+      cardElement.style.borderLeftWidth = '4px';
+      cardElement.style.paddingLeft = '12px';
+      cardElement.style.marginLeft = '-12px';
     });
   }
 
@@ -289,13 +245,13 @@ class GoogleSearchIndicator {
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === 1) { // Element node
             // Проверяем, не результат ли поиска
-            if (node.matches && node.matches('[data-sokoban-container], g-card-container')) {
-              this.processResultCard(node);
+            if (node.matches && node.matches('[data-sokoban-container], .g, g-card-container')) {
+              setTimeout(() => this.processResultCard(node), 100);
             }
 
             // Проверяем потомков
-            const cards = node.querySelectorAll('[data-sokoban-container], g-card-container');
-            cards.forEach(card => this.processResultCard(card));
+            const cards = node.querySelectorAll('[data-sokoban-container], .g, g-card-container');
+            cards.forEach(card => setTimeout(() => this.processResultCard(card), 100));
           }
         });
       });

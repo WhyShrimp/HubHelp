@@ -5,11 +5,15 @@
 class SearchSafety {
   constructor() {
     this.initialized = false;
+    this.userSettings = {};
     this.init();
   }
 
   async init() {
     if (this.initialized) return;
+    
+    // Загружаем настройки
+    await this.loadSettings();
     
     // Ждем загрузки DOM
     if (document.readyState === 'loading') {
@@ -17,6 +21,20 @@ class SearchSafety {
     } else {
       this.start();
     }
+  }
+
+  async loadSettings() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { action: 'getSettings' },
+        (response) => {
+          if (response?.success) {
+            this.userSettings = response.settings;
+          }
+          resolve();
+        }
+      );
+    });
   }
 
   async start() {
@@ -41,20 +59,21 @@ class SearchSafety {
       // Google
       '.g',
       'div[data-sokoban-container]',
-      'a[href*="http"] h3',
+      '.tF2Cxc',
       
       // Яндекс
       '.serp-item',
       '.organic__url',
       '.link_theme_outer',
+      '.Path-Item',
       
       // Bing
       '.b_algo',
-      '.b_title h2',
+      '.b_title',
       
       // DuckDuckGo
       '.result',
-      '.result__title'
+      '.result__body'
     ];
     
     selectors.forEach(selector => {
@@ -79,18 +98,23 @@ class SearchSafety {
       const domain = url.hostname.replace(/^www\./, '');
       
       // Проверяем безопасность
-      this.checkAndMark(linkElement, domain);
+      this.checkAndMark(element, domain);
       
     } catch (error) {
       // Игнорируем ошибки парсинга
     }
   }
 
-  async checkAndMark(link, domain) {
+  async checkAndMark(element, domain) {
     try {
       // Пропускаем внутренние ссылки поисковиков
       if (domain.includes('google') || domain.includes('yandex') || 
           domain.includes('bing') || domain.includes('duckduckgo')) {
+        return;
+      }
+      
+      // Пропускаем, если предупреждение скрыто
+      if (this.userSettings.hideWarnings && this.userSettings.hideWarnings[domain]) {
         return;
       }
       
@@ -102,91 +126,96 @@ class SearchSafety {
       });
       
       if (response?.success) {
-        this.addIndicator(link, response.result);
+        this.addColorStrip(element, response.result);
       }
     } catch (error) {
       console.warn('SafeWeb check error:', error);
     }
   }
 
-  addIndicator(element, result) {
+  addColorStrip(element, result) {
     // Проверяем, не добавлен ли уже индикатор
-    if (element.querySelector('.safeweb-indicator')) return;
+    if (element.dataset.safewebProcessed === 'true') return;
     
-    let indicator;
-    
-    // Ищем заголовок рядом со ссылкой
-    const titleElement = element.querySelector('h3, h2, [role="heading"]') || 
-                        element.parentElement?.querySelector('h3, h2') ||
-                        element;
-    
-    // Создаем индикатор
-    indicator = document.createElement('span');
-    indicator.className = 'safeweb-indicator';
-    
-    let color, text, tooltip;
+    // Определяем цвет полоски
+    let color, tooltip;
     
     switch(result.safe) {
       case 'safe':
-        color = '#10b981';
-        text = '✓';
+        color = '#10b981'; // зеленый
         tooltip = 'Безопасный сайт';
         break;
-      case 'not-safe':
-        color = '#ef4444';
-        text = '⚠️';
-        tooltip = result.reason || 'Опасный сайт';
-        break;
+      case 'unknown':
       default:
-        color = '#f59e0b';
-        text = '?';
+        color = '#f59e0b'; // желтый
         tooltip = 'Неизвестный сайт';
     }
     
-    indicator.innerHTML = `
-      <span style="
-        display: inline-block;
-        width: 16px;
-        height: 16px;
-        background: ${color};
-        color: white;
-        border-radius: 50%;
-        text-align: center;
-        line-height: 16px;
-        font-size: 10px;
-        margin-left: 8px;
-        vertical-align: middle;
-        cursor: help;
-        box-shadow: 0 0 4px ${color}80;
-        transition: transform 0.2s;
-      " title="${tooltip}">${text}</span>
-    `;
+    // Добавляем цветную полоску слева
+    element.style.borderLeft = `4px solid ${color}`;
+    element.style.paddingLeft = '12px';
+    element.style.marginLeft = '-12px';
+    element.style.position = 'relative';
+    element.style.transition = 'all 0.2s ease';
+    element.dataset.safewebProcessed = 'true';
+    element.title = tooltip;
     
-    // Добавляем индикатор рядом с заголовком
-    if (titleElement && titleElement.parentNode) {
-      titleElement.parentNode.insertBefore(indicator, titleElement.nextSibling);
-    } else if (element.parentNode) {
-      element.parentNode.insertBefore(indicator, element.nextSibling);
+    // Для Яндекса добавляем дополнительный отступ
+    if (window.location.hostname.includes('yandex')) {
+      element.style.marginBottom = '16px';
+      element.style.borderRadius = '8px';
+      element.style.padding = '12px';
     }
     
-    // Подсвечиваем опасные ссылки
-    if (result.safe === 'not-safe') {
-      element.style.opacity = '0.7';
-      element.style.borderLeft = '3px solid #ef4444';
-      element.style.paddingLeft = '8px';
+    // Добавляем индикатор для неизвестных сайтов
+    if (result.safe === 'unknown') {
+      const warningIcon = document.createElement('span');
+      warningIcon.innerHTML = '❓';
+      warningIcon.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        font-size: 16px;
+        color: ${color};
+        cursor: help;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+        z-index: 10;
+      `;
+      warningIcon.title = 'Неизвестный сайт - не проверен в базе безопасности';
       
-      // Добавляем подтверждение при клике
-      const originalClick = element.onclick;
-      element.onclick = (e) => {
-        if (!confirm(`⚠️ ВНИМАНИЕ!\n\nВы собираетесь перейти на потенциально опасный сайт:\n${domain}\n\n${result.reason}\n\nПродолжить?`)) {
+      element.appendChild(warningIcon);
+      
+      // Добавляем обработчик клика для предупреждения
+      const link = element.querySelector('a[href]');
+      if (link) {
+        const originalClick = link.onclick;
+        link.onclick = (e) => {
+          if (confirm(`⚠️ Внимание!\n\nВы собираетесь перейти на сайт, который не проверен в нашей базе безопасности:\n${domain}\n\nПродолжить?`)) {
+            if (originalClick) return originalClick.call(link, e);
+            return true;
+          }
           e.preventDefault();
           e.stopPropagation();
           return false;
-        }
-        if (originalClick) return originalClick.call(element, e);
-        return true;
-      };
+        };
+      }
     }
+    
+    // Эффект при наведении
+    element.addEventListener('mouseenter', () => {
+      element.style.borderLeftWidth = '6px';
+      element.style.paddingLeft = '10px';
+      element.style.marginLeft = '-10px';
+      element.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+    });
+    
+    element.addEventListener('mouseleave', () => {
+      element.style.borderLeftWidth = '4px';
+      element.style.paddingLeft = '12px';
+      element.style.marginLeft = '-12px';
+      element.style.boxShadow = 'none';
+    });
   }
 
   setupObserver() {

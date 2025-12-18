@@ -1,6 +1,6 @@
 /**
  * SafeWeb Pro - Background Service Worker
- * Центральная база данных и логика проверки
+ * Центральная база данных безопасных сайтов
  */
 
 // Полная база безопасных сайтов
@@ -101,27 +101,6 @@ let SAFE_SITES_DB = {
   "whatsapp.com": {n:"WhatsApp", c:"Мессенджер", t:["мессенджер", "общение", "шифрование"]}
 };
 
-// Опасные паттерны
-const DANGEROUS_PATTERNS = [
-  "rnicrosoft",
-  "microsoft-verify",
-  "microsoft-security",
-  "microsoft-login",
-  "googie",
-  "goog1e",
-  "google-verify",
-  "google-security",
-  "sberbank-verify",
-  "tinkoff-security",
-  "alfabank-login",
-  "-security.",
-  "-verify.",
-  "-login.",
-  "-update.",
-  "account-verification",
-  "secure-login"
-];
-
 // Кэш проверенных доменов
 const domainCache = new Map();
 
@@ -129,34 +108,16 @@ const domainCache = new Map();
  * Проверить безопасность домена
  */
 function checkDomainSafety(domain) {
-  // Проверяем кэш
-  if (domainCache.has(domain)) {
-    return domainCache.get(domain);
-  }
-  
   const result = {
     safe: "unknown",
     reason: "",
     details: null
   };
   
-  // Приводим к нижнему регистру
+  // Приводим к нижнему регистру и удаляем www.
   const cleanDomain = domain.toLowerCase().replace(/^www\./, '');
   
-  // 1. Проверка на опасные паттерны
-  const isDangerous = DANGEROUS_PATTERNS.some(pattern => 
-    cleanDomain.includes(pattern.toLowerCase())
-  );
-  
-  if (isDangerous) {
-    result.safe = "not-safe";
-    result.reason = "Обнаружен фишинговый паттерн";
-    result.details = { type: "phishing", pattern: "dangerous" };
-    domainCache.set(domain, result);
-    return result;
-  }
-  
-  // 2. Проверка на безопасные сайты
+  // 1. Проверка на безопасные сайты (полное совпадение)
   if (SAFE_SITES_DB[cleanDomain]) {
     result.safe = "safe";
     result.reason = "Проверенный безопасный сайт";
@@ -165,7 +126,7 @@ function checkDomainSafety(domain) {
     return result;
   }
   
-  // 3. Проверка поддоменов безопасных сайтов
+  // 2. Проверка поддоменов безопасных сайтов
   const parts = cleanDomain.split('.');
   if (parts.length > 2) {
     for (let i = 1; i < parts.length; i++) {
@@ -180,7 +141,7 @@ function checkDomainSafety(domain) {
     }
   }
   
-  // 4. Неизвестный сайт
+  // 3. Неизвестный сайт
   result.safe = "unknown";
   result.reason = "Сайт не проверен";
   result.details = null;
@@ -214,7 +175,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ 
           success: true, 
           sites: SAFE_SITES_DB,
-          patterns: DANGEROUS_PATTERNS,
           cacheSize: domainCache.size,
           totalSites: Object.keys(SAFE_SITES_DB).length
         });
@@ -227,7 +187,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           stats: {
             totalSafe: Object.keys(SAFE_SITES_DB).length,
             totalCategories: categories.size,
-            totalPatterns: DANGEROUS_PATTERNS.length,
             cacheSize: domainCache.size
           }
         });
@@ -252,4 +211,3 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Инициализация
 console.log("✅ SafeWeb Pro Background инициализирован");
 console.log("📊 Безопасных сайтов:", Object.keys(SAFE_SITES_DB).length);
-console.log("🚫 Паттернов фишинга:", DANGEROUS_PATTERNS.length);

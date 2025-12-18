@@ -7,10 +7,11 @@ class SafeWebProPopup {
     this.currentUrl = null;
     this.currentDomain = null;
     this.allSitesData = {};
-    this.blockedDomains = [];
     this.isDarkMode = false;
     this.searchTimer = null;
     this.databaseSort = 'name';
+    this.userStats = {};
+    this.userSettings = {};
     this.init();
   }
 
@@ -31,6 +32,12 @@ class SafeWebProPopup {
       // Загружаем базу данных
       await this.loadDatabase();
       
+      // Загружаем статистику
+      await this.loadStats();
+      
+      // Загружаем настройки
+      await this.loadSettings();
+      
       // Показываем начальное состояние
       this.showInitialState();
       
@@ -46,6 +53,8 @@ class SafeWebProPopup {
       const result = await chrome.storage.local.get(['theme']);
       if (result.theme === 'dark') {
         this.enableDarkMode();
+      } else if (result.theme === 'light') {
+        this.disableDarkMode();
       }
     } catch (error) {
       console.error('Theme setup error:', error);
@@ -117,6 +126,62 @@ class SafeWebProPopup {
       exportDatabaseTool.addEventListener('click', () => this.exportDatabase());
     }
     
+    // Аккаунт
+    const resetStatsBtn = document.getElementById('resetStatsBtn');
+    if (resetStatsBtn) {
+      resetStatsBtn.addEventListener('click', () => this.showResetStatsConfirm());
+    }
+    
+    const exportStatsBtn = document.getElementById('exportStatsBtn');
+    if (exportStatsBtn) {
+      exportStatsBtn.addEventListener('click', () => this.exportStats());
+    }
+    
+    const resetStatsModalBtn = document.getElementById('resetStatsModalBtn');
+    if (resetStatsModalBtn) {
+      resetStatsModalBtn.addEventListener('click', () => this.resetStats());
+    }
+    
+    // Настройки
+    const settingEmailWarnings = document.getElementById('settingEmailWarnings');
+    if (settingEmailWarnings) {
+      settingEmailWarnings.addEventListener('change', (e) => {
+        this.updateSetting('showEmailWarnings', e.target.checked);
+      });
+    }
+    
+    const settingUnknownWarnings = document.getElementById('settingUnknownWarnings');
+    if (settingUnknownWarnings) {
+      settingUnknownWarnings.addEventListener('change', (e) => {
+        this.updateSetting('showUnknownWarnings', e.target.checked);
+      });
+    }
+    
+    const settingSoundOnWarning = document.getElementById('settingSoundOnWarning');
+    if (settingSoundOnWarning) {
+      settingSoundOnWarning.addEventListener('change', (e) => {
+        this.updateSetting('soundOnWarning', e.target.checked);
+      });
+    }
+    
+    const settingTheme = document.getElementById('settingTheme');
+    if (settingTheme) {
+      settingTheme.addEventListener('change', (e) => {
+        this.updateSetting('theme', e.target.value);
+        this.applyTheme(e.target.value);
+      });
+    }
+    
+    const restoreWarningsBtn = document.getElementById('restoreWarningsBtn');
+    if (restoreWarningsBtn) {
+      restoreWarningsBtn.addEventListener('click', () => this.restoreWarnings());
+    }
+    
+    const clearHiddenWarningsBtn = document.getElementById('clearHiddenWarningsBtn');
+    if (clearHiddenWarningsBtn) {
+      clearHiddenWarningsBtn.addEventListener('click', () => this.clearHiddenWarnings());
+    }
+    
     // Модальные окна
     const modalClose = document.querySelectorAll('.modal-close');
     modalClose.forEach(btn => {
@@ -184,9 +249,17 @@ class SafeWebProPopup {
     if (targetTab) targetTab.classList.add('active');
     if (targetButton) targetButton.classList.add('active');
     
-    // При переключении на базу данных обновляем отображение
-    if (tabName === 'database') {
-      this.displayAllSites();
+    // Обновляем контент в зависимости от таба
+    switch(tabName) {
+      case 'database':
+        this.displayAllSites();
+        break;
+      case 'account':
+        this.displayAccountStats();
+        break;
+      case 'settings':
+        this.displaySettings();
+        break;
     }
   }
 
@@ -222,7 +295,6 @@ class SafeWebProPopup {
             this.showNotification('Ошибка загрузки базы данных', 'error');
           } else if (response && response.success) {
             this.allSitesData = response.sites || {};
-            this.blockedDomains = response.blocked || [];
             console.log('✅ База загружена:', Object.keys(this.allSitesData).length, 'сайтов');
           } else {
             this.allSitesData = {};
@@ -230,6 +302,41 @@ class SafeWebProPopup {
           }
           
           this.updateStats();
+          resolve();
+        }
+      );
+    });
+  }
+
+  async loadStats() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { action: 'getStats' },
+        (response) => {
+          if (response?.success) {
+            this.userStats = response.stats || {};
+            console.log('📈 Статистика загружена:', this.userStats);
+          }
+          resolve();
+        }
+      );
+    });
+  }
+
+  async loadSettings() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { action: 'getSettings' },
+        (response) => {
+          if (response?.success) {
+            this.userSettings = response.settings || {};
+            console.log('⚙️ Настройки загружены:', this.userSettings);
+            
+            // Применяем настройки темы
+            if (this.userSettings.theme) {
+              this.applyTheme(this.userSettings.theme);
+            }
+          }
           resolve();
         }
       );
@@ -432,6 +539,134 @@ class SafeWebProPopup {
     `;
   }
 
+  displayAccountStats() {
+    // Обновляем основные статистики
+    document.getElementById('statTotalVisits').textContent = this.userStats.totalVisits || 0;
+    document.getElementById('statSafeVisits').textContent = this.userStats.safeVisits || 0;
+    document.getElementById('statUnknownVisits').textContent = this.userStats.unknownVisits || 0;
+    document.getElementById('statUniqueSites').textContent = Object.keys(this.userStats.sitesVisited || {}).length;
+    
+    // Обновляем счетчик последних посещений
+    const visitsCount = Math.min(Object.keys(this.userStats.sitesVisited || {}).length, 10);
+    document.getElementById('lastVisitsCount').textContent = `(${visitsCount})`;
+    
+    // Отображаем последние посещения
+    this.displayLastVisits();
+  }
+
+  displayLastVisits() {
+    const container = document.getElementById('lastVisitsContainer');
+    if (!container) return;
+    
+    const sitesVisited = this.userStats.sitesVisited || {};
+    const sortedSites = Object.entries(sitesVisited)
+      .sort(([,a], [,b]) => new Date(b.lastVisit) - new Date(a.lastVisit))
+      .slice(0, 10);
+    
+    if (sortedSites.length === 0) {
+      container.innerHTML = `
+        <div class="no-results" style="padding: 40px 20px;">
+          <div class="no-results-icon">📊</div>
+          <div class="no-results-text">Статистика посещений пуста</div>
+          <div style="font-size: 12px; color: var(--color-text-secondary); margin-top: 8px;">
+            Начните посещать сайты для сбора статистики
+          </div>
+        </div>
+      `;
+      return;
+    }
+    
+    container.innerHTML = sortedSites.map(([domain, stats]) => {
+      let statusColor, statusIcon, statusText;
+      
+      switch(stats.lastStatus) {
+        case 'safe':
+          statusColor = '#10b981';
+          statusIcon = '✅';
+          statusText = 'Безопасный';
+          break;
+        default:
+          statusColor = '#f59e0b';
+          statusIcon = '❓';
+          statusText = 'Неизвестный';
+      }
+      
+      const visitDate = new Date(stats.lastVisit).toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      
+      return `
+        <div class="visit-item">
+          <div class="visit-header">
+            <div class="visit-domain">${domain}</div>
+            <div class="visit-status" style="color: ${statusColor}">
+              ${statusIcon} ${statusText}
+            </div>
+          </div>
+          <div class="visit-details">
+            <div class="visit-count">
+              <span>👁️ Посещений:</span>
+              <strong>${stats.count}</strong>
+            </div>
+            <div class="visit-category">
+              <span>📁 Категория:</span>
+              <strong>${stats.category}</strong>
+            </div>
+            <div class="visit-date">
+              <span>🕒 Последнее:</span>
+              <strong>${visitDate}</strong>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  displaySettings() {
+    // Устанавливаем значения переключателей из настроек
+    document.getElementById('settingEmailWarnings').checked = this.userSettings.showEmailWarnings !== false;
+    document.getElementById('settingUnknownWarnings').checked = this.userSettings.showUnknownWarnings !== false;
+    document.getElementById('settingSoundOnWarning').checked = this.userSettings.soundOnWarning === true;
+    document.getElementById('settingTheme').value = this.userSettings.theme || 'auto';
+  }
+
+  async updateSetting(key, value) {
+    this.userSettings[key] = value;
+    
+    await new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { 
+          action: 'updateSettings',
+          settings: { [key]: value }
+        },
+        resolve
+      );
+    });
+    
+    this.showNotification('Настройка сохранена', 'success');
+  }
+
+  applyTheme(theme) {
+    if (theme === 'dark') {
+      this.enableDarkMode();
+    } else if (theme === 'light') {
+      this.disableDarkMode();
+    } else {
+      // Авто режим - сброс атрибута
+      document.documentElement.removeAttribute('data-color-scheme');
+    }
+    
+    // Обновляем кнопку темы
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+      themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
+    }
+  }
+
   getSiteIcon(category) {
     const icons = {
       'Соцсети': '👥',
@@ -494,37 +729,142 @@ class SafeWebProPopup {
       modalTitle.textContent = siteInfo.n;
       
       modalBody.innerHTML = `
-        <div style="margin-bottom: 20px;">
-          <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
-            <div class="site-icon-small">${this.getSiteIcon(siteInfo.c)}</div>
-            <div>
-              <div style="font-size: 18px; font-weight: bold; margin-bottom: 4px;">${siteInfo.n}</div>
-              <div style="font-size: 14px; color: var(--color-text-secondary);">${domain}</div>
+        <div style="
+          background: linear-gradient(135deg, var(--color-surface) 0%, rgba(var(--color-teal-500-rgb), 0.05) 100%);
+          border-radius: 16px;
+          padding: 24px;
+          margin-bottom: 24px;
+          border: 1px solid rgba(var(--color-teal-500-rgb), 0.1);
+        ">
+          <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 20px;">
+            <div style="
+              width: 64px;
+              height: 64px;
+              background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+              border-radius: 16px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 28px;
+              color: var(--color-btn-primary-text);
+              box-shadow: 0 8px 20px rgba(var(--color-teal-500-rgb), 0.3);
+              flex-shrink: 0;
+            ">
+              ${this.getSiteIcon(siteInfo.c)}
+            </div>
+            <div style="flex: 1;">
+              <div style="
+                font-size: 22px;
+                font-weight: 700;
+                color: var(--color-text);
+                margin-bottom: 6px;
+                letter-spacing: -0.3px;
+              ">${siteInfo.n}</div>
+              <div style="
+                font-size: 14px;
+                color: var(--color-text-secondary);
+                font-family: 'SF Mono', 'Monaco', monospace;
+                word-break: break-all;
+              ">${domain}</div>
             </div>
           </div>
           
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-            <span class="safety-status safe">✓ БЕЗОПАСНЫЙ</span>
-            <span class="category-badge">${siteInfo.c}</span>
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+            <div style="
+              background: linear-gradient(135deg, var(--color-success) 0%, var(--color-primary-hover) 100%);
+              color: var(--color-btn-primary-text);
+              padding: 8px 16px;
+              border-radius: 50px;
+              font-size: 13px;
+              font-weight: 600;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              box-shadow: 0 4px 12px rgba(var(--color-teal-500-rgb), 0.2);
+            ">
+              <span>✓</span>
+              <span>БЕЗОПАСНЫЙ</span>
+            </div>
+            
+            <div style="
+              background: var(--tag-green);
+              color: var(--tag-green-text);
+              padding: 8px 16px;
+              border-radius: 50px;
+              font-size: 13px;
+              font-weight: 600;
+              border: 1px solid var(--tag-green-border);
+            ">
+              ${siteInfo.c}
+            </div>
           </div>
           
           ${siteInfo.t && siteInfo.t.length > 0 ? `
-            <div style="margin: 16px 0;">
-              <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px;">Теги:</div>
-              <div class="result-tags">
-                ${siteInfo.t.map(tag => `<span class="tag">${tag}</span>`).join('')}
+            <div style="margin-top: 20px;">
+              <div style="
+                font-size: 13px;
+                color: var(--color-text-secondary);
+                margin-bottom: 12px;
+                font-weight: 500;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+              ">
+                <span>🏷️</span>
+                <span>Теги</span>
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                ${siteInfo.t.map(tag => `
+                  <span style="
+                    background: rgba(var(--color-teal-500-rgb), 0.1);
+                    color: var(--color-primary);
+                    padding: 6px 12px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    font-weight: 500;
+                    border: 1px solid rgba(var(--color-teal-500-rgb), 0.2);
+                    transition: all 0.2s;
+                  ">${tag}</span>
+                `).join('')}
               </div>
             </div>
           ` : ''}
-          
-          <div style="font-size: 12px; color: var(--color-text-secondary); margin-top: 20px;">
-            ✅ Этот сайт проверен и находится в базе безопасных ресурсов
+        </div>
+        
+        <div style="
+          background: var(--color-secondary);
+          border-radius: 12px;
+          padding: 16px;
+          margin-bottom: 16px;
+          border: 1px solid var(--color-border);
+        ">
+          <div style="
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--color-text-secondary);
+            font-size: 14px;
+          ">
+            <span style="color: var(--color-success);">✅</span>
+            <span>Этот сайт проверен и находится в базе безопасных ресурсов</span>
           </div>
+        </div>
+        
+        <div style="
+          font-size: 12px;
+          color: var(--color-text-secondary);
+          text-align: center;
+          padding: 12px;
+          border-top: 1px solid var(--color-border);
+          margin-top: 16px;
+          opacity: 0.7;
+        ">
+          ID: ${domain.replace(/\./g, '-')}
         </div>
       `;
       
       // Сохраняем URL для кнопки открытия
-      modalBody.querySelector = null; // Очищаем любые потенциальные ссылки на старые элементы
+      modalBody.querySelector = null;
       const urlElement = document.createElement('div');
       urlElement.id = 'modalSiteUrl';
       urlElement.style.display = 'none';
@@ -538,7 +878,10 @@ class SafeWebProPopup {
   openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
-      modal.classList.add('active');
+      modal.style.display = 'flex';
+      setTimeout(() => {
+        modal.classList.add('active');
+      }, 10);
     }
   }
 
@@ -546,6 +889,9 @@ class SafeWebProPopup {
     const modal = document.getElementById(modalId);
     if (modal) {
       modal.classList.remove('active');
+      setTimeout(() => {
+        modal.style.display = 'none';
+      }, 300);
     }
   }
 
@@ -565,14 +911,11 @@ class SafeWebProPopup {
               
               if (result.safe === 'safe') {
                 message = `✅ Сайт ${domain} безопасен`;
-              } else if (result.safe === 'not-safe') {
-                message = `⚠️ Сайт ${domain} может быть опасен: ${result.reason}`;
               } else {
                 message = `❓ Сайт ${domain} не найден в базе данных`;
               }
               
-              this.showNotification(message, result.safe === 'safe' ? 'success' : 
-                                               result.safe === 'not-safe' ? 'error' : 'warning');
+              this.showNotification(message, result.safe === 'safe' ? 'success' : 'warning');
             }
           }
         );
@@ -598,7 +941,8 @@ class SafeWebProPopup {
       version: '2.0.2',
       exportDate: new Date().toISOString(),
       description: 'База безопасных сайтов SafeWeb Pro',
-      sites: this.allSitesData
+      sites: this.allSitesData,
+      stats: this.userStats
     };
     
     const json = JSON.stringify(data, null, 2);
@@ -617,8 +961,34 @@ class SafeWebProPopup {
     this.showNotification('База данных экспортирована', 'success');
   }
 
+  exportStats() {
+    const data = {
+      version: '2.0.2',
+      exportDate: new Date().toISOString(),
+      description: 'Статистика SafeWeb Pro',
+      stats: this.userStats,
+      lastReset: this.userStats.lastReset
+    };
+    
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `safeweb-pro-stats-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    URL.revokeObjectURL(url);
+    
+    this.showNotification('Статистика экспортирована', 'success');
+  }
+
   refreshData() {
     this.loadDatabase();
+    this.loadStats();
     this.showNotification('Данные обновлены', 'success');
   }
 
@@ -632,9 +1002,9 @@ class SafeWebProPopup {
     }
     
     // Сохраняем настройку
-    chrome.storage.local.set({ 
-      theme: this.isDarkMode ? 'dark' : 'light' 
-    });
+    const theme = this.isDarkMode ? 'dark' : 'light';
+    this.updateSetting('theme', theme);
+    this.applyTheme(theme);
     
     this.showNotification(
       this.isDarkMode ? 'Тёмная тема включена' : 'Светлая тема включена', 
@@ -658,16 +1028,142 @@ class SafeWebProPopup {
     if (themeToggle) themeToggle.textContent = '🌙';
   }
 
+  showResetStatsConfirm() {
+    // Заполняем детали статистики
+    document.getElementById('detailTotalChecks').textContent = this.userStats.totalVisits || 0;
+    document.getElementById('detailSafeChecks').textContent = this.userStats.safeVisits || 0;
+    document.getElementById('detailUnknownChecks').textContent = this.userStats.unknownVisits || 0;
+    document.getElementById('detailLastReset').textContent = this.userStats.lastReset ? 
+      new Date(this.userStats.lastReset).toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }) : 'Никогда';
+    
+    // Отображаем популярные сайты
+    this.displayPopularSites();
+    
+    this.openModal('statsDetailsModal');
+  }
+
+  displayPopularSites() {
+    const container = document.getElementById('popularSitesList');
+    if (!container) return;
+    
+    const sitesVisited = this.userStats.sitesVisited || {};
+    const sortedSites = Object.entries(sitesVisited)
+      .sort(([,a], [,b]) => b.count - a.count)
+      .slice(0, 5);
+    
+    if (sortedSites.length === 0) {
+      container.innerHTML = `
+        <div style="
+          color: var(--color-text-secondary);
+          text-align: center;
+          padding: 24px;
+          font-size: 13px;
+          opacity: 0.7;
+        ">
+          Нет данных о посещениях
+        </div>
+      `;
+      return;
+    }
+    
+    container.innerHTML = sortedSites.map(([domain, stats], index) => {
+      const isSafe = stats.lastStatus === 'safe';
+      
+      return `
+        <div style="
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px;
+          margin-bottom: 8px;
+          background: var(--color-surface);
+          border-radius: 12px;
+          border: 1px solid var(--color-border);
+          transition: transform 0.2s;
+        ">
+          <div style="
+            width: 32px;
+            height: 32px;
+            background: ${isSafe ? 'var(--color-success)' : 'var(--color-warning)'};
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            flex-shrink: 0;
+          ">
+            ${index + 1}
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="
+              font-size: 13px;
+              font-weight: 500;
+              color: var(--color-text);
+              margin-bottom: 2px;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            ">${domain}</div>
+            <div style="
+              font-size: 11px;
+              color: var(--color-text-secondary);
+              display: flex;
+              gap: 12px;
+            ">
+              <span>${stats.count} посещений</span>
+              <span>${isSafe ? '✅ Безопасный' : '❓ Неизвестный'}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async resetStats() {
+    await new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { action: 'resetStats' },
+        resolve
+      );
+    });
+    
+    await this.loadStats();
+    this.displayAccountStats();
+    this.closeModal('statsDetailsModal');
+    this.showNotification('Статистика сброшена', 'success');
+  }
+
+  async restoreWarnings() {
+    await new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { action: 'restoreWarnings' },
+        resolve
+      );
+    });
+    
+    await this.loadSettings();
+    this.showNotification('Все предупреждения восстановлены', 'success');
+  }
+
+  async clearHiddenWarnings() {
+    await this.updateSetting('hideWarnings', {});
+    this.showNotification('Список скрытых предупреждений очищен', 'success');
+  }
+
   showNotification(message, type = 'info') {
     // Удаляем старые уведомления
     const oldNotifications = document.querySelectorAll('.notification');
     oldNotifications.forEach(n => n.remove());
     
-    // Создаем уведомление
-    const notification = document.createElement('div');
-    notification.className = 'notification';
-    
-    // Добавляем стили в зависимости от типа
+    // Определяем цвета
     const colors = {
       'error': '#ef4444',
       'success': '#10b981',
@@ -675,29 +1171,79 @@ class SafeWebProPopup {
       'info': '#3b82f6'
     };
     
+    const bgColor = colors[type] || colors.info;
+    
+    // Создаем уведомление
+    const notification = document.createElement('div');
+    notification.className = 'notification';
     notification.style.cssText = `
       position: fixed;
       top: 20px;
       right: 20px;
-      background: ${colors[type] || colors.info};
+      background: ${bgColor};
       color: white;
-      padding: 12px 16px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      padding: 16px 20px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
       z-index: 10000;
-      max-width: 300px;
+      max-width: 320px;
       font-size: 14px;
-      animation: fadeIn 0.3s ease;
+      animation: notificationSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      white-space: pre-line;
+      line-height: 1.5;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
     
-    notification.textContent = message;
+    // Добавляем иконку
+    const icons = {
+      'error': '❌',
+      'success': '✅',
+      'warning': '⚠️',
+      'info': 'ℹ️'
+    };
+    
+    notification.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 18px;">${icons[type] || icons.info}</span>
+        <span style="flex: 1;">${message}</span>
+      </div>
+    `;
+    
     document.body.appendChild(notification);
     
-    // Удаляем через 3 секунды
+    // Добавляем стили анимации
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes notificationSlideIn {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      @keyframes notificationSlideOut {
+        from {
+          transform: translateX(0);
+          opacity: 1;
+        }
+        to {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    
+    // Удаляем через 5 секунд
     setTimeout(() => {
-      notification.style.animation = 'fadeOut 0.3s ease';
-      setTimeout(() => notification.remove(), 300);
-    }, 3000);
+      notification.style.animation = 'notificationSlideOut 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
+      setTimeout(() => notification.remove(), 400);
+    }, 5000);
   }
 }
 
