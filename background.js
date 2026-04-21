@@ -111,7 +111,8 @@ function checkDomainSafety(domain) {
   const result = {
     safe: "unknown",
     reason: "",
-    details: null
+    details: null,
+    score: 50  // Балл по умолчанию для неизвестных сайтов
   };
   
   // Приводим к нижнему регистру и удаляем www.
@@ -122,6 +123,7 @@ function checkDomainSafety(domain) {
     result.safe = "safe";
     result.reason = "Проверенный безопасный сайт";
     result.details = SAFE_SITES_DB[cleanDomain];
+    result.score = calculateSafetyScore(cleanDomain, true);
     domainCache.set(domain, result);
     return result;
   }
@@ -135,19 +137,90 @@ function checkDomainSafety(domain) {
         result.safe = "safe";
         result.reason = "Поддомен безопасного сайта";
         result.details = SAFE_SITES_DB[parentDomain];
+        result.score = calculateSafetyScore(parentDomain, true, parts[0]);
         domainCache.set(domain, result);
         return result;
       }
     }
   }
   
-  // 3. Неизвестный сайт
+  // 3. Неизвестный сайт - автоматическая проверка и расчет балла
   result.safe = "unknown";
   result.reason = "Сайт не проверен";
   result.details = null;
+  result.score = calculateSafetyScore(cleanDomain, false);
   
   domainCache.set(domain, result);
   return result;
+}
+
+/**
+ * Расчет балла безопасности (0-100)
+ */
+function calculateSafetyScore(domain, isKnown, subdomain = '') {
+  let score = 70; // Базовый балл
+  
+  if (isKnown) {
+    // Известные сайты получают высокий балл
+    score = 90;
+    
+    // Популярные домены получают максимальный балл
+    const popularDomains = ['google.com', 'youtube.com', 'facebook.com', 'twitter.com', 
+                           'instagram.com', 'github.com', 'stackoverflow.com', 'wikipedia.org'];
+    if (popularDomains.some(d => domain.endsWith(d))) {
+      score = 98;
+    }
+    
+    // Поддомены известных сайтов могут иметь немного меньший балл
+    if (subdomain && subdomain.length > 10) {
+      score = Math.max(75, score - 10);
+    }
+  } else {
+    // Для неизвестных сайтов анализируем домен
+    
+    // Домены с HTTPS (проверяем наличие в кэше или предполагаем)
+    // Длинные домены могут быть подозрительными
+    const domainParts = domain.split('.');
+    const mainDomainLength = domainParts[domainParts.length - 2]?.length || 0;
+    
+    // Слишком длинные имена доменов снижают балл
+    if (mainDomainLength > 15) {
+      score -= 15;
+    }
+    
+    // Домены с цифрами могут быть подозрительными
+    if (/\d/.test(domain)) {
+      score -= 10;
+    }
+    
+    // Домены с дефисами могут быть фишинговыми
+    if ((domain.match(/-/g) || []).length > 1) {
+      score -= 15;
+    }
+    
+    // Популярные TLD получают небольшой бонус
+    const trustedTLDs = ['.com', '.org', '.net', '.edu', '.gov', '.ru', '.de', '.uk'];
+    if (trustedTLDs.some(tld => domain.endsWith(tld))) {
+      score += 5;
+    }
+    
+    // Новые/редкие TLD могут снижать балл
+    const suspiciousTLDs = ['.xyz', '.top', '.click', '.link', '.work', '.date'];
+    if (suspiciousTLDs.some(tld => domain.endsWith(tld))) {
+      score -= 20;
+    }
+    
+    // Проверяем наличие слов "login", "secure", "verify" и т.д. (часто используются в фишинге)
+    const phishingKeywords = ['login', 'secure', 'verify', 'account', 'update', 'confirm'];
+    if (phishingKeywords.some(keyword => domain.includes(keyword))) {
+      score -= 15;
+    }
+    
+    // Ограничиваем балл от 0 до 100
+    score = Math.max(0, Math.min(100, score));
+  }
+  
+  return Math.round(score);
 }
 
 /**

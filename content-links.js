@@ -191,7 +191,16 @@ class LinkChecker {
   showTooltip(link, result) {
     if (!this.tooltip || !this.currentLink || this.currentLink !== link) return;
     
-    let color, icon, text;
+    let color, icon, text, safetyScore;
+    
+    // Расчет балла безопасности (0-100)
+    if (result.safe === 'safe') {
+      safetyScore = result.score || 95;
+    } else if (result.safe === 'not-safe') {
+      safetyScore = result.score || 10;
+    } else {
+      safetyScore = result.score || 50;
+    }
     
     switch(result.safe) {
       case 'safe':
@@ -215,18 +224,52 @@ class LinkChecker {
       color = '#ef4444';
       icon = '🚫';
       text = 'Запрещен в РФ';
+      safetyScore = 0;
     }
     
     link.dataset.safewebStatus = result.safe;
     
-    // Добавляем визуальную индикацию
-    if (result.safe === 'not-safe' || result.blockedInRU) {
-      link.style.borderBottom = '2px solid #ef4444';
-    } else if (result.safe === 'safe') {
-      link.style.borderBottom = '2px solid #10b981';
-    } else if (result.safe === 'unknown') {
-      link.style.borderBottom = '2px solid #f59e0b';
+    // Убираем старую линию если есть
+    const oldLine = link.querySelector('.safeweb-safety-line');
+    if (oldLine) oldLine.remove();
+    
+    // Создаем линию безопасности ПОД ссылкой
+    const safetyLine = document.createElement('div');
+    safetyLine.className = 'safeweb-safety-line';
+    safetyLine.style.cssText = `
+      position: absolute;
+      bottom: -3px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: ${color};
+      border-radius: 0 0 2px 2px;
+      pointer-events: none;
+      transition: all 0.2s ease;
+    `;
+    
+    // Для inline ссылок используем border-bottom
+    if (getComputedStyle(link).display === 'inline' || getComputedStyle(link).display === 'inline-block') {
+      link.style.borderBottom = `3px solid ${color}`;
+      link.style.paddingBottom = '2px';
+    } else {
+      // Для блочных элементов добавляем линию внутрь
+      if (link.style.position !== 'relative') {
+        link.style.position = 'relative';
+      }
+      link.appendChild(safetyLine);
     }
+    
+    // Функция для получения цвета балла
+    const getScoreColor = (score) => {
+      if (score >= 80) return '#10b981';
+      if (score >= 60) return '#84cc16';
+      if (score >= 40) return '#f59e0b';
+      if (score >= 20) return '#f97316';
+      return '#ef4444';
+    };
+    
+    const scoreColor = getScoreColor(safetyScore);
     
     this.tooltip.innerHTML = `
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
@@ -244,6 +287,23 @@ class LinkChecker {
       ${result.details?.c ? `
         <div style="margin-top: 6px; font-size: 11px; opacity: 0.7;">
           📁 Категория: ${result.details.c}
+        </div>
+      ` : ''}
+      ${!result.blockedInRU ? `
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span style="font-size: 11px; opacity: 0.8;">Безопасность:</span>
+            <span style="font-size: 12px; font-weight: 600; color: ${scoreColor};">${safetyScore}/100</span>
+          </div>
+          <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 6px; overflow: hidden;">
+            <div style="
+              width: ${safetyScore}%;
+              height: 100%;
+              background: linear-gradient(90deg, ${scoreColor} 0%, ${getScoreColor(Math.min(100, safetyScore + 10))} 100%);
+              border-radius: 4px;
+              transition: width 0.3s ease;
+            "></div>
+          </div>
         </div>
       ` : ''}
     `;
